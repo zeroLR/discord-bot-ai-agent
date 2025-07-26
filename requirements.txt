@@ -1,0 +1,5 @@
+discord.py
+python-dotenv
+openai
+google-genai
+# 其他你的 Bot 可能需要的套件...
