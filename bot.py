@@ -1,26 +1,22 @@
+import os
 import logging
+from returns.result import Success, Failure
+
+from dotenv import load_dotenv
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
-from google import genai
-from google.genai import types
-from pydantic import BaseModel
-import enum
-import os  # 用於從環境變數讀取 TOKEN
-from utils import transform_response_content
 
-
-# Gemini Model Enum
-class GeminiModel(enum.Enum):
-    GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
-    GEMINI_25_FLASH = "gemini-2.5-flash"
-    GEMINI_25_PRO = "gemini-2.5-pro"
-
+from core.enum import model
+from client import provider
+from util.utils import transform_response_content
 
 # 載入 .env 檔案
-from dotenv import load_dotenv
-
 load_dotenv()
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # 啟用必要的 Intents
 intents = discord.Intents.default()
@@ -30,45 +26,12 @@ intents.members = True  # 如果需要處理成員相關資訊，建議開啟
 # 初始化 Bot，可以設定一個指令前綴，即使主要用提及
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-used_gemini_model = GeminiModel.GEMINI_25_FLASH_LITE
-system_instruction = "以繁體中文回答問題，語氣保持專業與嚴謹"
+# 初始化 AI 客戶端
+ai_client = provider.AIProvider.get_client(model.Provider.GOOGLE)
 
-
-# 顯示當前使用即可用的模型
-@bot.command()
-async def showUsedModel(ctx: Context):
-    await ctx.send(
-        f"{ctx.author.mention}，當前使用的模型是：{used_gemini_model.value}\n可使用的模型列表： {list(GeminiModel)}"
-    )
-
-
-# 設定使用的模型
-@bot.command()
-async def setModel(ctx: Context, model_name: str):
-    global used_gemini_model
-    try:
-        used_gemini_model = GeminiModel[model_name]
-        await ctx.send(
-            f"{ctx.author.mention}，已成功設定使用的模型為：{used_gemini_model.value}"
-        )
-    except KeyError:
-        await ctx.send(
-            f"{ctx.author.mention}，無效的模型名稱。可用的模型列表： {list(GeminiModel)}"
-        )
-
-
-# 顯示當前的 system instruction
-@bot.command()
-async def showSystemInstruction(ctx: Context):
-    await ctx.send(f"{ctx.author.mention}，當前的系統指令是：{system_instruction}")
-
-
-# 設定 system instruction
-@bot.command()
-async def setSystemInstruction(ctx: Context, instruction: str):
-    global system_instruction
-    system_instruction = instruction
-    await ctx.send(f"{ctx.author.mention}，已更新系統指令")
+if ai_client is None:
+    logging.error("無法初始化 Provider 客戶端，請檢查環境變數或客戶端實現。")
+    exit(1)
 
 
 # Bot 收到指令時的事件
@@ -83,30 +46,12 @@ async def on_command_completion(ctx: Context):
     logging.info(msg=f"指令 {ctx.command} 執行完成")
 
 
-# 初始化 Google GenAI 客戶端
-client = genai.Client()
-chat = client.chats.create(
-    model=used_gemini_model.value,
-    config=types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        max_output_tokens=10000,  # 最大輸出字數
-        top_k=2,  # top-k 採樣
-        top_p=0.5,  # top-p 採樣
-        temperature=0.5,  # 溫度控制
-        response_mime_type="application/json",  # 回應的 MIME 類型
-        stop_sequences=["\n"],  # 停止序列
-        seed=42,  # 隨機種子
-    ),
-)
-
-
 # Bot 發生錯誤時的事件
 @bot.event
 async def on_error(event, *args, **kwargs):
     # 捕捉所有事件的錯誤
     import traceback
 
-    # print(f"發生錯誤：{event}")
     logging.error(f"發生錯誤：{event}")
     traceback.print_exc()
 
@@ -114,9 +59,9 @@ async def on_error(event, *args, **kwargs):
 # Bot 啟動時的事件
 @bot.event
 async def on_ready():
-    print(f"Bot 已上線！登入為 {bot.user.name}")
-    print(f"Bot ID: {bot.user.id}")
-    print("---")
+    logging.info(f"Bot 已上線！登入為 {bot.user.name}")
+    logging.info(f"Bot ID: {bot.user.id}")
+    logging.info("---")
     # 發送一條訊息到所有伺服器的第一個頻道
     for guild in bot.guilds:
         # 確保 Bot 有權限發送訊息到這個頻道
@@ -125,7 +70,7 @@ async def on_ready():
             try:
                 await channel.send(f"我上線囉！")
             except discord.Forbidden:
-                print(
+                logging.info(
                     f"無法在 {guild.name} 的 {channel.name} 頻道發送訊息，可能是權限不足。"
                 )
 
@@ -136,6 +81,24 @@ async def on_message(message: discord.Message):
     # 忽略機器人自己的訊息，防止無限迴圈
     if message.author == bot.user:
         return
+
+    # 檢查是否是回覆機器人的訊息
+    if message.reference:
+        replied_message = await message.channel.fetch_message(
+            message.reference.message_id
+        )
+        if replied_message.author == bot.user:
+            # 這是回覆機器人的訊息
+            content_after_reply = message.clean_content.replace(
+                f"@{bot.user.name}", ""
+            ).strip()
+            logging.info(
+                msg=f"[{message.guild.name}/{message.channel.name}] {message.author.name} 回覆了 Bot：'{content_after_reply}'"
+            )
+
+            # 這裡是你串接 AI 的地方
+            await process_send_message_and_reply(message, content_after_reply)
+            return
 
     # 檢查訊息中是否提及了這個機器人
     # message.mentions 是一個列表，包含所有被提及的用戶或角色
@@ -156,58 +119,37 @@ async def on_message(message: discord.Message):
         )
 
         # 這裡是你串接 AI 的地方
-        await process_gemini_send_message_and_reply(message, content_after_mention)
+        await process_send_message_and_reply(message, content_after_mention)
 
     # 確保 Bot 的指令也能正常運作
     await bot.process_commands(message)
 
 
-class CommonResponse(BaseModel):
-    result: str
-
-
-async def process_gemini_send_message_and_reply(message: discord.Message, content: str):
+async def process_send_message_and_reply(message: discord.Message, content: str):
 
     if content.strip() == "":
-        message.reply(
+        await message.reply(
             f"哈囉 {message.author.mention}！你提及了我，但沒有給我具體的問題呢。"
         )
         return
 
-    response = chat.send_message(
-        message=content,
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": CommonResponse,
-        },
-    )
+    result = ai_client.send_message(content)
 
-    # 處理 AI 候選回覆
-    finish_reason_message = ""
-    if response and response.candidates:
-        finish_reason: types.FinishReason = response.candidates[0].finish_reason
+    match result:
+        case Success(response):
+            # 成功獲取 AI 回應
+            logging.debug(f"AI 回應成功：{response}")
+            # 將 AI 回應內容分割成多個 chunk
+            chunks = transform_response_content(response)
 
-        if finish_reason != types.FinishReason.STOP:
-            match finish_reason:
-                case types.FinishReason.MAX_TOKENS:
-                    finish_reason_message = "回應因達到最大字數限制而停止。"
-                case types.FinishReason.TIMEOUT:
-                    finish_reason_message = "回應因超時而停止。"
-                case _:
-                    finish_reason_message = f"未知的結束原因：{finish_reason}"
-
-            # 印出回應和結束原因
-            logging.error(msg=f"結束原因：{finish_reason_message}, 回應：{response}")
-            await message.reply(f"結束原因：{finish_reason_message}")
+            # 依序發送每一段分割內容
+            for chunk in chunks:
+                await message.reply(chunk)
+        case Failure(err):
+            # 處理錯誤情況
+            logging.error(f"AI 回應失敗：{err}")
+            await message.reply(f"AI 回應失敗，錯誤：{err}")
             return
-
-    # Use instantiated objects.
-    struct_response: CommonResponse = response.parsed
-    chunks = transform_response_content(struct_response.result)
-
-    # 依序發送每一段分割內容
-    for chunk in chunks:
-        await message.reply(chunk)
 
 
 # 執行 Bot
@@ -217,4 +159,4 @@ TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if TOKEN:
     bot.run(TOKEN)
 else:
-    print("錯誤：請設定環境變數 'DISCORD_BOT_TOKEN' 以提供 Bot 的 Token。")
+    logging.error("錯誤：請設定環境變數 'DISCORD_BOT_TOKEN' 以提供 Bot 的 Token。")
