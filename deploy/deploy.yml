@@ -10,5 +10,5 @@
     - name: Build and restart docker-compose
       shell: |
         cd /home/ubuntu/discord-bot
-        docker-compose pull
-        docker-compose up -d --build
+        docker compose pull
+        docker compose up -d --build
