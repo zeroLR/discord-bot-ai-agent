@@ -1,0 +1,14 @@
+- hosts: aws_vps
+  tasks:
+    - name: Pull latest code
+      git:
+        repo: 'https://github.com/zeroLR/discord-bot-ai-agent.git'
+        dest: /home/ubuntu/discord-bot
+        version: main
+        force: yes
+
+    - name: Build and restart docker-compose
+      shell: |
+        cd /home/ubuntu/discord-bot
+        docker-compose pull
+        docker-compose up -d --build
