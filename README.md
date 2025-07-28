@@ -12,15 +12,17 @@ It uses the Gemini API for generating content based on user input.
 
 ## Usage
 
-To use the bot, ensure you have the necessary dependencies installed and run the bot script.
-
-The bot will listen for messages in the Discord server and respond with AI-generated content.
-
 Configure the `.env` file with your API keys and other necessary configurations.
+
+Run the bot using the following command:
+
+```bash
+python bot.py
+```
 
 ## ToDo
 
 - [ ] Implement chat history persistence.
 - [ ] Implement loading file as system instructions.
-- [ ] Create dockerfile.
+- [x] Create dockerfile.
 - [ ] Setup CI/CD pipeline for automatic deployment.

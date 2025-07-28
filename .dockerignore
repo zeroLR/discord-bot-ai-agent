@@ -1,0 +1,23 @@
+# 忽略本地開發用檔案與敏感資訊
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+*.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+*.bak
+*.tmp
+logs/
+# 測試與文件
+*.md
+tests/
+docs/

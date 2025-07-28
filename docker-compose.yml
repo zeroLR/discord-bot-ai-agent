@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+  discord-bot:
+    build: .
+    container_name: discord-bot
+    restart: unless-stopped
+    user: botuser
+    working_dir: /app
+    # 建議用 env_file 傳遞敏感資訊
+    env_file:
+      - .env
+    # 可設定資源限制
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.50'
+    #       memory: 512M
+    # ports:  # 若有對外 API 可開啟
+    #   - "8080:8080"
+    command: ["python", "-O", "bot.py"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "10"
