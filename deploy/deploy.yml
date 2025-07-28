@@ -9,7 +9,7 @@
 
     - name: Copy .env file
       copy:
-        src: .env
+        src: ../.env
         dest: /home/ubuntu/discord-bot/.env
         owner: ubuntu
         mode: '0600'
