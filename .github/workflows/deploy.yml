@@ -23,6 +23,10 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AWS_VPS_SSH_KEY }}
 
+      - name: Write .env file
+        run: |
+          echo "${{ secrets.ENV_FILE }}" > .env
+
       - name: Run Ansible Playbook
         run: |
           ansible-playbook -i deploy/inventory.ini deploy/deploy.yml
